@@ -182,14 +182,14 @@ func simulateTaskAddition(p *tea.Program) {
 
 		mainTask := &MainTask{
 			Name:              name,
-			TotalSubtasks:     rand.Intn(10) + 5,
+			TotalSubtasks:     rand.Intn(100) + 5,
 			CompletedSubtasks: 0,
 			Spinner:           spinner.New(),
 			IsCompleted:       false,
 		}
 
-		mainTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-		mainTask.Spinner.Spinner = spinner.Line
+		mainTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("43"))
+		mainTask.Spinner.Spinner = spinner.MiniDot
 
 		p.Send(addMainTaskMsg{mainTask: mainTask})
 
