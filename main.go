@@ -65,7 +65,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-	case time.Time:
+	case spinner.TickMsg:
 		for _, task := range m.tasks {
 			if !task.IsCompleted {
 				var cmd tea.Cmd
@@ -73,12 +73,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
-		cmds = append(cmds, tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
-			return t
-		}))
 		return m, tea.Batch(cmds...)
 	case addMainTaskMsg:
 		m.tasks = append(m.tasks, msg.mainTask)
+		return m, msg.mainTask.Spinner.Tick
 	case subtaskCompleteMsg:
 		for _, task := range m.tasks {
 			if task.Name == msg.mainTaskName {
@@ -191,7 +189,7 @@ func simulateTaskAddition(p *tea.Program) {
 		}
 
 		mainTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-		mainTask.Spinner.Spinner = spinner.Dot
+		mainTask.Spinner.Spinner = spinner.Line
 
 		p.Send(addMainTaskMsg{mainTask: mainTask})
 
