@@ -22,9 +22,10 @@ type MainTask struct {
 }
 
 type model struct {
-	tasks     []*MainTask
-	mutex     sync.Mutex
-	isLoading bool
+	tasks            []*MainTask
+	mutex            sync.Mutex
+	isLoading        bool
+	resultTasksAdded bool // NEW: Flag to track if result tasks have been added
 }
 
 type subtaskCompleteMsg struct {
@@ -41,16 +42,15 @@ type addMainTaskMsg struct {
 
 func initialModel() *model {
 	return &model{
-		tasks:     []*MainTask{},
-		isLoading: true,
-		mutex:     sync.Mutex{},
+		tasks:            []*MainTask{},
+		isLoading:        true,
+		mutex:            sync.Mutex{},
+		resultTasksAdded: false, // Initialize the flag
 	}
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
-		return t
-	})
+	return nil // No initial command needed
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -65,6 +65,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+
 	case spinner.TickMsg:
 		for _, task := range m.tasks {
 			if !task.IsCompleted {
@@ -74,9 +75,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmds...)
+
 	case addMainTaskMsg:
 		m.tasks = append(m.tasks, msg.mainTask)
 		return m, msg.mainTask.Spinner.Tick
+
 	case subtaskCompleteMsg:
 		for _, task := range m.tasks {
 			if task.Name == msg.mainTaskName {
@@ -88,8 +91,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.allTasksCompleted() {
-			m.isLoading = false
+			if !m.resultTasksAdded {
+				// Add result tasks
+				m.resultTasksAdded = true
+				cmds = append(cmds, m.addResultTasks()...)
+			} else {
+				m.isLoading = false
+			}
 		}
+
 	case mainTaskCompleteMsg:
 		for _, task := range m.tasks {
 			if task.Name == msg.mainTaskName {
@@ -98,7 +108,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.allTasksCompleted() {
-			m.isLoading = false
+			if !m.resultTasksAdded {
+				// Add result tasks
+				m.resultTasksAdded = true
+				cmds = append(cmds, m.addResultTasks()...)
+			} else {
+				m.isLoading = false
+			}
 		}
 	}
 
@@ -158,6 +174,39 @@ func (m *model) allTasksCompleted() bool {
 	return true
 }
 
+// NEW: Function to add result tasks
+func (m *model) addResultTasks() []tea.Cmd {
+	var cmds []tea.Cmd
+	resultTaskNames := []string{"Writing results to JSON file", "Writing results to Excel file"}
+
+	for _, name := range resultTaskNames {
+		resultTask := &MainTask{
+			Name:              name,
+			TotalSubtasks:     1,
+			CompletedSubtasks: 0,
+			Spinner:           spinner.New(),
+			IsCompleted:       false,
+		}
+		resultTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+		resultTask.Spinner.Spinner = spinner.Line
+
+		m.tasks = append(m.tasks, resultTask)
+		cmds = append(cmds, resultTask.Spinner.Tick)
+		cmds = append(cmds, simulateResultTask(resultTask))
+	}
+
+	return cmds
+}
+
+// NEW: Function to simulate result task execution
+func simulateResultTask(task *MainTask) tea.Cmd {
+	return func() tea.Msg {
+		// Simulate some work
+		time.Sleep(time.Second * 2)
+		return subtaskCompleteMsg{mainTaskName: task.Name}
+	}
+}
+
 func runApp() {
 	p := tea.NewProgram(
 		initialModel(),
@@ -188,8 +237,8 @@ func simulateTaskAddition(p *tea.Program) {
 			IsCompleted:       false,
 		}
 
-		mainTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("43"))
-		mainTask.Spinner.Spinner = spinner.MiniDot
+		mainTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+		mainTask.Spinner.Spinner = spinner.Line
 
 		p.Send(addMainTaskMsg{mainTask: mainTask})
 
