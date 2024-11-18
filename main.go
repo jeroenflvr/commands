@@ -186,10 +186,12 @@ func (m *model) View() string {
 
 		// If task is completed and logs were previously displayed, indicate logs are collapsed
 		if task.IsCompleted && task.HasCollapsedLogs && len(task.Logs) > 0 {
-			collapsedStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("244")). // Dark gray color
-				Render("   Logs collapsed.")
-			s += "\n" + collapsedStyle
+			collapsedStyle := ""
+			//lipgloss.NewStyle().
+			//Foreground(lipgloss.Color("244")). // Dark gray color
+			//Render()
+			//s += "\n" + collapsedStyle
+			s += collapsedStyle
 		}
 
 		// Separator between tasks for better readability
