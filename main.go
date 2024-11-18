@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,13 +20,15 @@ type MainTask struct {
 	CompletedSubtasks int
 	Spinner           spinner.Model
 	IsCompleted       bool
+	Logs              []string // Store log messages
+	HasCollapsedLogs  bool     // NEW: Flag to indicate if logs are collapsed
 }
 
 type model struct {
 	tasks            []*MainTask
 	mutex            sync.Mutex
 	isLoading        bool
-	resultTasksAdded bool // NEW: Flag to track if result tasks have been added
+	resultTasksAdded bool // Flag to track if result tasks have been added
 }
 
 type subtaskCompleteMsg struct {
@@ -38,6 +41,11 @@ type mainTaskCompleteMsg struct {
 
 type addMainTaskMsg struct {
 	mainTask *MainTask
+}
+
+type logMessageMsg struct {
+	mainTaskName string
+	message      string
 }
 
 func initialModel() *model {
@@ -86,6 +94,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				task.CompletedSubtasks++
 				if task.CompletedSubtasks >= task.TotalSubtasks {
 					task.IsCompleted = true
+					// NEW: Collapse logs when task is completed
+					task.HasCollapsedLogs = true
 				}
 				break
 			}
@@ -104,6 +114,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, task := range m.tasks {
 			if task.Name == msg.mainTaskName {
 				task.IsCompleted = true
+				// NEW: Collapse logs when task is completed
+				task.HasCollapsedLogs = true
 				break
 			}
 		}
@@ -114,6 +126,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.addResultTasks()...)
 			} else {
 				m.isLoading = false
+			}
+		}
+
+	case logMessageMsg:
+		for _, task := range m.tasks {
+			if task.Name == msg.mainTaskName {
+				// Append the new log message
+				task.Logs = append(task.Logs, msg.message)
+				// Keep only the last 5 messages
+				if len(task.Logs) > 5 {
+					task.Logs = task.Logs[len(task.Logs)-5:]
+				}
+				break
 			}
 		}
 	}
@@ -135,12 +160,40 @@ func (m *model) View() string {
 	for _, task := range m.tasks {
 		var status string
 		if task.IsCompleted {
-			status = "✔"
+			// Use a larger check mark, make it bold and bright green
+			status = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("10")). // Bright green color
+				Bold(true).
+				Render("✅")
+
 		} else {
 			status = task.Spinner.View()
 		}
 
-		s += fmt.Sprintf("%s %s [%d/%d]\n", status, task.Name, task.CompletedSubtasks, task.TotalSubtasks)
+		// Task Header
+		taskHeader := fmt.Sprintf("\n%s %s [%d/%d]", status, task.Name, task.CompletedSubtasks, task.TotalSubtasks)
+		s += taskHeader
+
+		// Display logs only if the task is not completed and there are logs
+		if !task.IsCompleted && len(task.Logs) > 0 {
+			logStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240")).
+				Italic(true)
+			for _, log := range task.Logs {
+				s += logStyle.Render("\n   " + log)
+			}
+		}
+
+		// If task is completed and logs were previously displayed, indicate logs are collapsed
+		if task.IsCompleted && task.HasCollapsedLogs && len(task.Logs) > 0 {
+			collapsedStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("244")). // Dark gray color
+				Render("   Logs collapsed.")
+			s += "\n" + collapsedStyle
+		}
+
+		// Separator between tasks for better readability
+		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("-", 50))
 	}
 
 	s += "\nPress 'q' to quit."
@@ -174,7 +227,7 @@ func (m *model) allTasksCompleted() bool {
 	return true
 }
 
-// NEW: Function to add result tasks
+// Function to add result tasks
 func (m *model) addResultTasks() []tea.Cmd {
 	var cmds []tea.Cmd
 	resultTaskNames := []string{"Writing results to JSON file", "Writing results to Excel file"}
@@ -186,6 +239,8 @@ func (m *model) addResultTasks() []tea.Cmd {
 			CompletedSubtasks: 0,
 			Spinner:           spinner.New(),
 			IsCompleted:       false,
+			Logs:              []string{},
+			HasCollapsedLogs:  false, // Initialize flag
 		}
 		resultTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 		resultTask.Spinner.Spinner = spinner.Line
@@ -198,7 +253,7 @@ func (m *model) addResultTasks() []tea.Cmd {
 	return cmds
 }
 
-// NEW: Function to simulate result task execution
+// Function to simulate result task execution
 func simulateResultTask(task *MainTask) tea.Cmd {
 	return func() tea.Msg {
 		// Simulate some work
@@ -235,6 +290,8 @@ func simulateTaskAddition(p *tea.Program) {
 			CompletedSubtasks: 0,
 			Spinner:           spinner.New(),
 			IsCompleted:       false,
+			Logs:              []string{},
+			HasCollapsedLogs:  false,
 		}
 
 		mainTask.Spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -248,11 +305,33 @@ func simulateTaskAddition(p *tea.Program) {
 
 func executeSubtasks(p *tea.Program, mainTask *MainTask) {
 	for i := 0; i < mainTask.TotalSubtasks; i++ {
+		// Simulate API call delay
 		time.Sleep(time.Duration(100+rand.Intn(200)) * time.Millisecond)
+
+		// Simulate an API call and capture its output
+		logMsg := simulateAPICall(i + 1)
+
+		// Send the actual log message
+		p.Send(logMessageMsg{mainTaskName: mainTask.Name, message: logMsg})
+
+		// Update subtask completion
 		p.Send(subtaskCompleteMsg{mainTaskName: mainTask.Name})
 	}
 
 	p.Send(mainTaskCompleteMsg{mainTaskName: mainTask.Name})
+}
+
+// Simulate an API call and return a log message
+func simulateAPICall(subtaskNumber int) string {
+	// Simulate different types of log messages
+	logTypes := []string{
+		fmt.Sprintf("INFO: Successfully processed item %d", subtaskNumber),
+		fmt.Sprintf("WARNING: Item %d took longer than expected", subtaskNumber),
+		fmt.Sprintf("ERROR: Failed to process item %d", subtaskNumber),
+	}
+
+	// Randomly select a log type to simulate variability
+	return logTypes[rand.Intn(len(logTypes))]
 }
 
 var rootCmd = &cobra.Command{
